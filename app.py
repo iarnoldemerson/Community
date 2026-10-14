@@ -35,8 +35,12 @@ def process_pdb_to_coordinates(pdb_content):
             for residue in chain:
                 if residue.has_id('CA') and residue.get_resname() not in ['HOH', 'WAT', 'UNL']:
                     ca_atom = residue['CA']
+                    
+                    # --- FIX: Extract only the integer index (position 1) from the Biopython tuple ---
+                    clean_res_num = int(residue.id[1])
+                    
                     extracted_coords.append({
-                        'residue_id': int(residue.id[1]), 
+                        'residue_id': clean_res_num, # Stored as a pure integer
                         'residue_name': str(residue.get_resname()),
                         'chain_id': str(chain.id),
                         'coordinates': ca_atom.get_coord().tolist()
@@ -147,8 +151,6 @@ if uploaded_file is not None:
 
             participation_coefficients[node_id] = 1 - sum_ratios_squared
 
-        nx.set_node_attributes(contact_network, participation_coefficients, 'community_links') # placeholder fix
-
         output_data = []
         for node_id, attributes in contact_network.nodes(data=True):
             output_data.append({
@@ -176,7 +178,7 @@ if uploaded_file is not None:
         
         st.dataframe(df_results, width='stretch')
 
-              # --- NEW: 3D Interactive Molecular Viewer Component Layout ---
+        # --- 3D Interactive Molecular Viewer Component Layout ---
         st.markdown("---")
         st.markdown("### Interactive 3D Molecular Community Viewer")
         st.caption("Rotate (Left-Click), Pan (Right-Click), Zoom (Scroll Wheels). Residues are colored by their Leiden clusters.")
@@ -199,12 +201,12 @@ if uploaded_file is not None:
         # Set default canvas dark styling background configuration
         viewer.setBackgroundColor('#111111')
 
-        # --- FIX: Clear all default styles/wireframes from the entire structure first ---
-        # Passing an empty style block hides all unselected chains completely.
+        # Clear all default styles/wireframes from the entire structure first
         viewer.setStyle({}, {})
 
         # Apply custom group-by styling constraints line-by-line across every residue
         for _, row in df_results.iterrows():
+            # --- FIX: row['Residue_Number'] is now a clean primitive integer from parsing ---
             viewer.setStyle(
                 {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
                 {'cartoon': {'color': community_colors[row['Community']]}}
@@ -216,4 +218,3 @@ if uploaded_file is not None:
         showmol(viewer, height=600, width=900)
 
         st.success("Analysis complete! 3D structure loaded successfully.")
-
