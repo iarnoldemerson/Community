@@ -2,9 +2,11 @@ pandas
 numpy
 biopython
 networkx
-matplotlib==3.6.3
+matplotlib
 leidenalg
 python-igraph
+scipy
 streamlit
 xlsxwriter
-scipy
+py3Dmol
+stmol
