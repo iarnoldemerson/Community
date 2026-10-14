@@ -12,14 +12,18 @@ import streamlit as st
 from io import StringIO, BytesIO
 import sys
 
+# --- 3D Molecular View Component Additions ---
+import py3Dmol
+from stmol import showmol
+
 sys.setrecursionlimit(10000)
 
 # --- Streamlit Caching Redesign ---
 @st.cache_data
 def process_pdb_to_coordinates(pdb_content):
     """
-    Parses PDB content and immediately extracts coordinates into a raw list of 
-    dictionaries. Returns standard Python primitives to fully bypass RecursionErrors.
+    Parses PDB content and extracts coordinates into a raw list of dictionaries.
+    Returns standard Python primitives to fully bypass RecursionErrors.
     """
     parser = PDBParser()
     pdb_file_like = StringIO(pdb_content)
@@ -40,7 +44,7 @@ def process_pdb_to_coordinates(pdb_content):
     return extracted_coords
 
 def build_contact_network(ca_coords, target_chains, cutoff=7.5):
-    """Builds a protein contact network filtering by chains using flat coordinate data."""
+    """Builds a protein contact network filtering by chains using flat data."""
     G = nx.Graph()
 
     filtered_coords = [
@@ -143,7 +147,7 @@ if uploaded_file is not None:
 
             participation_coefficients[node_id] = 1 - sum_ratios_squared
 
-        nx.set_node_attributes(contact_network, participation_coefficients, 'participation_coefficient')
+        nx.set_node_attributes(contact_network, participation_coefficients, 'community_links') # placeholder fix
 
         output_data = []
         for node_id, attributes in contact_network.nodes(data=True):
@@ -153,12 +157,11 @@ if uploaded_file is not None:
                 'Residue_Name': attributes['residue_name'],
                 'Residue_Number': attributes['residue_id'],
                 'Community': attributes['community'],
-                'Participation_Coefficient': attributes['participation_coefficient']
+                'Participation_Coefficient': participation_coefficients[node_id]
             })
         
         df_results = pd.DataFrame(output_data)
         
-        # --- FIXED: Added the required 'spec' parameter argument to st.columns ---
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("### Processed Results")
@@ -173,44 +176,39 @@ if uploaded_file is not None:
         
         st.dataframe(df_results, width='stretch')
 
-        # --- Network Visualization Section ---
+        # --- NEW: 3D Interactive Molecular Viewer Component Layout ---
         st.markdown("---")
-        st.markdown("### Protein Network Community Visualization")
-        
-        show_plot = st.checkbox("Render 2D Network Graph", value=True)
-        
-        if show_plot:
-            with st.spinner("Generating network plot..."):
-                fig, ax = plt.subplots(figsize=(10, 8))
-                
-                # --- FIXED: Isolating references away from raw NetworkX object schemas ---
-                # We calculate layout coordinates inside a dedicated local scope
-                node_list = list(contact_network.nodes())
-                edge_list = list(contact_network.edges())
-                
-                pos = nx.spring_layout(contact_network, iterations=50, seed=42)
-                node_communities = [contact_network.nodes[node]['community'] for node in node_list]
-                cmap = plt.colormaps['tab20']
-                
-                # We draw primitives explicitly instead of letting Matplotlib inspect deep components
-                ax.scatter(
-                    [pos[node][0] for node in node_list],
-                    [pos[node][1] for node in node_list],
-                    c=node_communities,
-                    cmap=cmap,
-                    s=60,
-                    zorder=3
-                )
-                
-                # Explicit vector mapping for edges skips Python 3.14's copy.deepcopy loop completely
-                from matplotlib.collections import LineCollection
-                edge_pos = np.array([ [pos[u], pos[v]] for u, v in edge_list ])
-                edge_collection = LineCollection(edge_pos, colors='gray', alpha=0.2, linewidths=0.5, zorder=1)
-                ax.add_collection(edge_collection)
-                
-                ax.axis('off')
-                plt.tight_layout()
-                st.pyplot(fig)
-                plt.close(fig)
+        st.markdown("### Interactive 3D Molecular Community Viewer")
+        st.caption("Rotate (Left-Click), Pan (Right-Click), Zoom (Scroll Wheels). Residues are colored by their Leiden clusters.")
 
-        st.success("Analysis complete! Data processed successfully.")
+        # Create a dictionary hex-lookup using Matplotlib's colormap registry
+        cmap = plt.colormaps['tab20']
+        unique_communities = sorted(list(df_results['Community'].unique()))
+        
+        # Build hex conversion table
+        community_colors = {}
+        for idx, comm in enumerate(unique_communities):
+            rgb = cmap(idx % 20)[:3]
+            hex_color = '#{:02x}{:02x}{:02x}'.format(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
+            community_colors[comm] = hex_color
+
+        # Render 3D Mol Canvas panel
+        viewer = py3Dmol.view(width=900, height=600)
+        viewer.addModel(pdb_content, 'pdb')
+        
+        # Set default canvas dark styling background configuration
+        viewer.setBackgroundColor('#111111')
+
+        # Apply custom group-by styling constraints line-by-line across every residue
+        for _, row in df_results.iterrows():
+            viewer.setStyle(
+                {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
+                {'cartoon': {'color': community_colors[row['Community']]}}
+            )
+
+        viewer.zoomTo()
+        
+        # Render viewport module layer explicitly into the Streamlit server layout
+        showmol(viewer, height=600, width=900)
+
+        st.success("Analysis complete! 3D structure loaded successfully.")
