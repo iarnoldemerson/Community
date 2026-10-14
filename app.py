@@ -167,7 +167,7 @@ if uploaded_file is not None:
         
         df_results = pd.DataFrame(output_data)
         
-        col1, col2 = st.columns()
+        col1, col2 = st.columns(2)
         with col1:
             st.markdown("### Processed Results")
         with col2:
