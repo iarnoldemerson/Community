@@ -15,8 +15,6 @@ import sys
 sys.setrecursionlimit(10000)
 
 # --- Streamlit Caching Redesign ---
-# By doing the parsing AND extraction entirely inside the cached function, 
-# the deep molecular 'Structure' objects never enter Streamlit's runtime memory loops.
 @st.cache_data
 def process_pdb_to_coordinates(pdb_content):
     """
@@ -33,12 +31,11 @@ def process_pdb_to_coordinates(pdb_content):
             for residue in chain:
                 if residue.has_id('CA') and residue.get_resname() not in ['HOH', 'WAT', 'UNL']:
                     ca_atom = residue['CA']
-                    # Extract raw primitives (strings, integers, list of floats)
                     extracted_coords.append({
                         'residue_id': int(residue.id[1]), 
                         'residue_name': str(residue.get_resname()),
                         'chain_id': str(chain.id),
-                        'coordinates': ca_atom.get_coord().tolist() # Convert numpy array to flat list
+                        'coordinates': ca_atom.get_coord().tolist()
                     })
     return extracted_coords
 
@@ -46,7 +43,6 @@ def build_contact_network(ca_coords, target_chains, cutoff=7.5):
     """Builds a protein contact network filtering by chains using flat coordinate data."""
     G = nx.Graph()
 
-    # Filter coordinates based on user sidebar selection
     filtered_coords = [
         res for res in ca_coords 
         if target_chains is None or res['chain_id'] in target_chains
@@ -54,7 +50,6 @@ def build_contact_network(ca_coords, target_chains, cutoff=7.5):
 
     for res_data in filtered_coords:
         node_id = f"{res_data['chain_id']}_{res_data['residue_name']}_{res_data['residue_id']}"
-        # Convert coordinates back to numpy array for vector math
         G.add_node(node_id, 
                    residue_id=res_data['residue_id'],
                    residue_name=res_data['residue_name'],
@@ -95,10 +90,7 @@ with st.sidebar:
 if uploaded_file is not None:
     pdb_content = uploaded_file.read().decode("utf-8")
     
-    # Safely get raw flat coordinate payload 
     all_coordinates = process_pdb_to_coordinates(pdb_content)
-    
-    # Get available chains from our flat list
     all_chains = sorted(list(set(res['chain_id'] for res in all_coordinates)))
 
     selected_chains = st.sidebar.multiselect(
@@ -107,7 +99,6 @@ if uploaded_file is not None:
         default=all_chains
     )
 
-    # Process based on selection map
     chains_filter = None if not selected_chains else selected_chains
     
     if not selected_chains:
@@ -167,6 +158,7 @@ if uploaded_file is not None:
         
         df_results = pd.DataFrame(output_data)
         
+        # --- FIXED: Added the required 'spec' parameter argument to st.columns ---
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("### Processed Results")
@@ -179,7 +171,6 @@ if uploaded_file is not None:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         
-        # FIX: Replaced deprecated use_container_width=True with width='stretch'
         st.dataframe(df_results, width='stretch')
 
         # --- Network Visualization Section ---
@@ -192,6 +183,8 @@ if uploaded_file is not None:
             with st.spinner("Generating network plot..."):
                 fig, ax = plt.subplots(figsize=(10, 8))
                 
+                # --- FIXED: Isolating references away from raw NetworkX object schemas ---
+                # We calculate layout coordinates inside a dedicated local scope
                 node_list = list(contact_network.nodes())
                 edge_list = list(contact_network.edges())
                 
@@ -199,14 +192,21 @@ if uploaded_file is not None:
                 node_communities = [contact_network.nodes[node]['community'] for node in node_list]
                 cmap = plt.colormaps['tab20']
                 
-                nx.draw_networkx_nodes(
-                    contact_network, pos, nodelist=node_list,
-                    node_size=60, node_color=node_communities, cmap=cmap, ax=ax
+                # We draw primitives explicitly instead of letting Matplotlib inspect deep components
+                ax.scatter(
+                    [pos[node][0] for node in node_list],
+                    [pos[node][1] for node in node_list],
+                    c=node_communities,
+                    cmap=cmap,
+                    s=60,
+                    zorder=3
                 )
-                nx.draw_networkx_edges(
-                    contact_network, pos, edgelist=edge_list,
-                    alpha=0.2, edge_color="gray", ax=ax
-                )
+                
+                # Explicit vector mapping for edges skips Python 3.14's copy.deepcopy loop completely
+                from matplotlib.collections import LineCollection
+                edge_pos = np.array([ [pos[u], pos[v]] for u, v in edge_list ])
+                edge_collection = LineCollection(edge_pos, colors='gray', alpha=0.2, linewidths=0.5, zorder=1)
+                ax.add_collection(edge_collection)
                 
                 ax.axis('off')
                 plt.tight_layout()
