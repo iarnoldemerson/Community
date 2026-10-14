@@ -27,8 +27,6 @@ def parse_and_extract_structure(pdb_content):
     structure = parser.get_structure('protein', pdb_file_like)
     return structure
 
-
-
 def get_alpha_carbon_coords(structure, target_chains=None):
     """
     Extracts the alpha-carbon coordinates for each residue from a pre-parsed structure.
@@ -79,7 +77,6 @@ def build_contact_network(ca_coords, cutoff=7.5):
             if distance <= cutoff:
                 G.add_edge(node_i_id, node_j_id, distance=distance)
     return G
-
 
 # --- Excel Exporter Utility Function ---
 def to_excel(df):
@@ -196,44 +193,37 @@ if uploaded_file is not None:
             st.markdown("---")
             st.markdown("### Protein Network Community Visualization")
             
-            # Simple toggle so large graphs don't freeze the screen on initial load
             show_plot = st.checkbox("Render 2D Network Graph", value=True)
             
             if show_plot:
                 with st.spinner("Generating network plot..."):
-                    # Create the layout configuration for the graph network
+                    # Create the layout configuration figure container explicitly
                     fig, ax = plt.subplots(figsize=(10, 8))
-                    pos = nx.spring_layout(contact_network, seed=42)  # Fixed seed ensures identical layout on reload
                     
-                    # Extract community assignments to construct the node color array
-                    node_communities = [contact_network.nodes[node]['community'] for node in contact_network.nodes()]
+                    # Convert graph elements into simple list maps to completely bypass deep recursion traps
+                    node_list = list(contact_network.nodes())
+                    edge_list = list(contact_network.edges())
                     
-                    # Initialize the stable colormap mapping we configured earlier
+                    # Compute iterative visual coordinates with capped loops to optimize rendering speed
+                    pos = nx.spring_layout(
+                        contact_network, 
+                        iterations=50,   
+                        seed=42          
+                    )
+                    
+                    # Match community index metrics with flat node lists
+                    node_communities = [contact_network.nodes[node]['community'] for node in node_list]
+                    
+                    # Initialize stable colormap registration using modern Matplotlib API
                     cmap = plt.colormaps['tab20']
                     
-                    # Draw the network topology layers
+                    # Draw nodes safely using sequence constraints
                     nx.draw_networkx_nodes(
                         contact_network, 
                         pos, 
+                        nodelist=node_list,
                         node_size=60, 
                         node_color=node_communities, 
                         cmap=cmap, 
                         ax=ax
                     )
-                    nx.draw_networkx_edges(
-                        contact_network, 
-                        pos, 
-                        alpha=0.3, 
-                        edge_color="gray", 
-                        ax=ax
-                    )
-                    
-                    # Optional: Clean up layout padding and clear frame borders
-                    ax.axis('off')
-                    plt.tight_layout()
-                    
-                    # Render the completed Matplotlib figure container directly onto the webpage
-                    st.pyplot(fig)
-                    plt.close(fig) # Frees system memory cache blocks instantly
-            
-            st.success("Analysis complete! Data processed successfully.")
