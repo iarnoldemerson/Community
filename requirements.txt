@@ -1,0 +1,10 @@
+pandas
+numpy
+biopython
+networkx
+matplotlib==3.6.3
+leidenalg
+python-igraph
+streamlit
+xlsxwriter
+scipy
