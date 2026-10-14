@@ -36,11 +36,11 @@ def process_pdb_to_coordinates(pdb_content):
                 if residue.has_id('CA') and residue.get_resname() not in ['HOH', 'WAT', 'UNL']:
                     ca_atom = residue['CA']
                     
-                    # --- FIX: Extract only the integer index (position 1) from the Biopython tuple ---
+                    # --- FIX: Extract index 1 from the Biopython ID tuple to get the true integer number ---
                     clean_res_num = int(residue.id[1])
                     
                     extracted_coords.append({
-                        'residue_id': clean_res_num, # Stored as a pure integer
+                        'residue_id': clean_res_num, # Stored as a pure primitive integer
                         'residue_name': str(residue.get_resname()),
                         'chain_id': str(chain.id),
                         'coordinates': ca_atom.get_coord().tolist()
@@ -206,7 +206,6 @@ if uploaded_file is not None:
 
         # Apply custom group-by styling constraints line-by-line across every residue
         for _, row in df_results.iterrows():
-            # --- FIX: row['Residue_Number'] is now a clean primitive integer from parsing ---
             viewer.setStyle(
                 {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
                 {'cartoon': {'color': community_colors[row['Community']]}}
