@@ -176,7 +176,7 @@ if uploaded_file is not None:
         
         st.dataframe(df_results, width='stretch')
 
-        # --- NEW: 3D Interactive Molecular Viewer Component Layout ---
+              # --- NEW: 3D Interactive Molecular Viewer Component Layout ---
         st.markdown("---")
         st.markdown("### Interactive 3D Molecular Community Viewer")
         st.caption("Rotate (Left-Click), Pan (Right-Click), Zoom (Scroll Wheels). Residues are colored by their Leiden clusters.")
@@ -189,7 +189,7 @@ if uploaded_file is not None:
         community_colors = {}
         for idx, comm in enumerate(unique_communities):
             rgb = cmap(idx % 20)[:3]
-            hex_color = '#{:02x}{:02x}{:02x}'.format(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
+            hex_color = '#{:02x}{:02x}{:02x}'.format(int(rgb*255), int(rgb*255), int(rgb*255))
             community_colors[comm] = hex_color
 
         # Render 3D Mol Canvas panel
@@ -198,6 +198,10 @@ if uploaded_file is not None:
         
         # Set default canvas dark styling background configuration
         viewer.setBackgroundColor('#111111')
+
+        # --- FIX: Clear all default styles/wireframes from the entire structure first ---
+        # Passing an empty style block hides all unselected chains completely.
+        viewer.setStyle({}, {})
 
         # Apply custom group-by styling constraints line-by-line across every residue
         for _, row in df_results.iterrows():
@@ -212,3 +216,4 @@ if uploaded_file is not None:
         showmol(viewer, height=600, width=900)
 
         st.success("Analysis complete! 3D structure loaded successfully.")
+
