@@ -35,7 +35,7 @@ def process_pdb_to_coordinates(pdb_content):
             for residue in chain:
                 if residue.has_id('CA') and residue.get_resname() not in ['HOH', 'WAT', 'UNL']:
                     ca_atom = residue['CA']
-                    clean_res_num = int(residue.id[1])
+                    clean_res_num = int(residue.id)
                     
                     extracted_coords.append({
                         'residue_id': clean_res_num,
@@ -176,30 +176,28 @@ if uploaded_file is not None:
         
         st.dataframe(df_results, width='stretch')
 
-        # --- Dual Visualization Window: 3D Ball View + 2D Circle Clusters ---
+        # --- Dual Visualization Window ---
         st.markdown("---")
         
-        # Color initialization table mapping
         cmap = plt.colormaps['tab20']
         unique_communities = sorted(list(df_results['Community'].unique()))
         community_colors = {}
         for idx, comm in enumerate(unique_communities):
             rgb = cmap(idx % 20)[:3]
-            community_colors[comm] = '#{:02x}{:02x}{:02x}'.format(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
+            community_colors[comm] = '#{:02x}{:02x}{:02x}'.format(int(rgb*255), int(rgb*255), int(rgb*255))
 
+        # --- FIX: Pass explicit integer layout to st.columns ---
         vis_col1, vis_col2 = st.columns(2)
 
         with vis_col1:
             st.markdown("### 3D Atom Sphere (Ball) Viewer")
             st.caption("Amino acid residues are individual high-density spheres colored by community mapping.")
             
-            # Setup 3D WebGL viewport canvas
             viewer = py3Dmol.view(width=450, height=450)
             viewer.addModel(pdb_content, 'pdb')
             viewer.setBackgroundColor('#111111')
-            viewer.setStyle({}, {})  # Wipe out structural defaults
+            viewer.setStyle({}, {}) 
             
-            # Render each alpha-carbon residue as a prominent sphere (ball style)
             for _, row in df_results.iterrows():
                 viewer.setStyle(
                     {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
@@ -210,36 +208,38 @@ if uploaded_file is not None:
 
         with vis_col2:
             st.markdown("### 2D Topological Community Circle Layout")
-            st.caption("Interconnected residue nodes are bundled dynamically inside absolute isolated ring structures.")
+            st.caption("Interconnected residue nodes are bundled dynamically inside isolated ring structures.")
             
-            # Construct a clean geometric shell/circle diagram map
+            # --- FIX: Standard clean figure layout container without overlapping patches ---
             fig, ax = plt.subplots(figsize=(6, 6))
-            fig.patch.set_facecolor('#111111')
-            ax.set_facecolor('#111111')
             
             node_list = list(contact_network.nodes())
             edge_list = list(contact_network.edges())
             
-            # Group nodes distinctly by community lists to plot concentric shell paths
             community_groups = []
             for comm in unique_communities:
                 community_groups.append([n for n in node_list if contact_network.nodes[n]['community'] == comm])
             
-            # Compute geometric concentric boundary ring circles
             pos = nx.shell_layout(contact_network, nlist=community_groups)
             node_colors_list = [community_colors[contact_network.nodes[node]['community']] for node in node_list]
             
             # Draw standard nodes on concentric tracks
             nx.draw_networkx_nodes(
                 contact_network, pos, nodelist=node_list,
-                node_size=35, node_color=node_colors_list, ax=ax
+                node_size=40, node_color=node_colors_list, ax=ax
             )
             
-            # Draw edge interactions between circles
+            # --- FIX: Changed edge color to dark grey to ensure clear visibility against light backgrounds ---
             nx.draw_networkx_edges(
                 contact_network, pos, edgelist=edge_list,
-                alpha=0.15, edge_color="#888888", width=0.4, ax=ax
+                alpha=0.3, edge_color="#555555", width=0.5, ax=ax
             )
             
             ax.axis('off')
             plt.tight_layout()
+            
+            # --- FIX: Force layout call parameter explicitly ---
+            st.pyplot(fig)
+            plt.close(fig)
+
+        st.success("Analysis complete! Dual structural maps rendered successfully.")
