@@ -36,15 +36,12 @@ def process_pdb_to_coordinates(pdb_content):
             for residue in chain:
                 if residue.has_id('CA') and residue.get_resname() not in ['HOH', 'WAT', 'UNL']:
                     ca_atom = residue['CA']
-
-                    # Target index 1 from the Biopython ID tuple to get the true integer number
                     clean_res_num = int(residue.id[1])
-
                     extracted_coords.append({
                         'residue_id': clean_res_num,
                         'residue_name': str(residue.get_resname()),
                         'chain_id': str(chain.id),
-                        'coordinates': ca_atom.get_coord().tolist() 
+                        'coordinates': ca_atom.get_coord().tolist()
                     })
     return extracted_coords
 
@@ -52,9 +49,9 @@ def build_contact_network(ca_coords, target_chains, cutoff=7.5):
     """Builds a protein contact network filtering by chains using flat data arrays."""
     G = nx.Graph()
 
-    filtered_coords = [
-        res for res in ca_coords
-        if target_chains is None or res['chain_id'] in target_chains
+    filtered_coords = [ 
+        res for res in ca_coords 
+        if target_chains is None or res['chain_id'] in target_chains 
     ]
 
     for res_data in filtered_coords:
@@ -169,6 +166,17 @@ if uploaded_file is not None:
 
         df_results = pd.DataFrame(output_data)
 
+        # --- Highlight Residues Selector ---
+        all_residues_list = sorted(df_results['Node_ID'].unique())
+        with st.sidebar:
+            st.markdown("---")
+            st.header("💡 Highlight Amino Acids")
+            highlighted_nodes = st.multiselect(
+                "Select Residues to Highlight in Visualizations",
+                options=all_residues_list,
+                default=[]
+            )
+
         # --- SIDEBAR Hubs Ranking Box ---
         df_sorted_hubs = df_results.sort_values(by='Participation_Coefficient', ascending=False).head(5)
         with st.sidebar:
@@ -183,7 +191,7 @@ if uploaded_file is not None:
             st.markdown("### Processed Results")
         with col2:
             excel_data = to_excel(df_results)
-            st.download_button( 
+            st.download_button(
                 label="📥 Download Excel File",
                 data=excel_data,
                 file_name="protein_network_analysis.xlsx",
@@ -207,7 +215,7 @@ if uploaded_file is not None:
 
         with vis_col1:
             st.markdown("### 3D Atom Sphere (Ball) Viewer")
-            st.caption("Physical 3D structure showing amino acid residue balls colored by community.")
+            st.caption("Physical 3D structure showing amino acid residue balls colored by community. Highlighted residues have secondary yellow halos.")
 
             viewer = py3Dmol.view(width=450, height=450)
             viewer.addModel(pdb_content, 'pdb')
@@ -215,16 +223,24 @@ if uploaded_file is not None:
             viewer.setStyle({}, {})
 
             for _, row in df_results.iterrows():
-                viewer.setStyle(
-                    {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
-                    {'sphere': {'color': community_colors[row['Community']], 'radius': 1.8}}
-                )
+                node_id = row['Node_ID']
+                # Highlight selection visual styling override
+                if node_id in highlighted_nodes:
+                    viewer.setStyle(
+                        {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
+                        {'sphere': {'color': '#FFFF00', 'radius': 2.8}}
+                    )
+                else:
+                    viewer.setStyle(
+                        {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
+                        {'sphere': {'color': community_colors[row['Community']], 'radius': 1.8}}
+                    )
             viewer.zoomTo()
             showmol(viewer, height=450, width=450)
 
         with vis_col2:
             st.markdown("### 3D Clustered Topological Network Layout")
-            st.caption("Residue interaction topological graph mapped mathematically into distinct 3D space clouds.")
+            st.caption("Residue interaction topological graph. Highlighted residues are displayed as large glowing stars.")
 
             fig = plt.figure(figsize=(6, 6))
             ax = fig.add_subplot(111, projection='3d')
@@ -243,20 +259,40 @@ if uploaded_file is not None:
             x_nodes = [pos_3d[node][0] for node in node_list]
             y_nodes = [pos_3d[node][1] for node in node_list]
             z_nodes = [pos_3d[node][2] for node in node_list]
-            node_colors_list = [community_colors[contact_network.nodes[node]['community']] for node in node_list]
-            ax.scatter(x_nodes, y_nodes, z_nodes, c=node_colors_list, s=40, depthshade=True, zorder=3)
             
+            # Base node colors and sizes
+            node_colors_list = []
+            node_sizes_list = []
+            for node in node_list:
+                if node in highlighted_nodes:
+                    node_colors_list.append('#FFFF00')
+                    node_sizes_list.append(180) # Larger size for highlighting
+                else:
+                    node_colors_list.append(community_colors[contact_network.nodes[node]['community']])
+                    node_sizes_list.append(40)
+
+            # Draw normal nodes
+            ax.scatter(x_nodes, y_nodes, z_nodes, c=node_colors_list, s=node_sizes_list, depthshade=True, zorder=3)
+
+            # Highlight border for chosen nodes
+            highlighted_indices = [node_list.index(n) for n in highlighted_nodes if n in node_list]
+            if highlighted_indices:
+                hx = [x_nodes[i] for i in highlighted_indices]
+                hy = [y_nodes[i] for i in highlighted_indices]
+                hz = [z_nodes[i] for i in highlighted_indices]
+                ax.scatter(hx, hy, hz, facecolors='none', edgecolors='red', s=300, marker='o', linewidths=2.0, zorder=4)
+
             for edge in edge_list:
                 u, v = edge
                 x_line = [pos_3d[u][0], pos_3d[v][0]]
                 y_line = [pos_3d[u][1], pos_3d[v][1]]
                 z_line = [pos_3d[u][2], pos_3d[v][2]]
                 ax.plot(x_line, y_line, z_line, color='#444444', alpha=0.15, linewidth=0.6, zorder=1)
-                
+
             ax.set_axis_off()
             plt.tight_layout()
             st.pyplot(fig, clear_figure=True, facecolor='white')
             plt.close(fig)
-            
+
         st.markdown("---")
         st.success("Analysis complete! Clustered topological data structures populated successfully.")
