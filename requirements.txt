@@ -11,3 +11,4 @@ xlsxwriter
 py3Dmol
 stmol
 ipython_genutils
+plotly
