@@ -37,7 +37,7 @@ def process_pdb_to_coordinates(pdb_content):
                     ca_atom = residue['CA']
                     
                     # Target index 1 from the Biopython ID tuple to get the true integer number
-                    clean_res_num = int(residue.id)
+                    clean_res_num = int(residue.id[1])
                     
                     extracted_coords.append({
                         'residue_id': clean_res_num,
@@ -239,3 +239,18 @@ if uploaded_file is not None:
                 node_size=50, node_color=node_colors_list, ax=ax
             )
             
+            # Draw connection trails spanning between the local clusters
+            nx.draw_networkx_edges(
+                contact_network, pos, edgelist=edge_list,
+                alpha=0.2, edge_color="#333333", width=0.5, ax=ax
+            )
+            
+            ax.axis('off')
+            plt.tight_layout()
+            
+            # Pass figure explicitly and override transparent backgrounds to prevent rendering invisibility
+            st.pyplot(fig, clear_figure=True, facecolor='white')
+            plt.close(fig)
+
+        st.markdown("---")
+        st.success("Analysis complete! Clustered topological data structures populated successfully.")
