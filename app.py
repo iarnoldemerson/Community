@@ -12,13 +12,13 @@ import streamlit as st
 from io import StringIO, BytesIO
 import sys
 
-# --- 3D Molecular Viewer Import Requirements ---
+# --- 3D Molecular View Component Additions ---
 import py3Dmol
 from stmol import showmol
 
 sys.setrecursionlimit(10000)
 
-# --- Streamlit Caching Redesign ---
+# --- Streamlit Caching ---
 @st.cache_data
 def process_pdb_to_coordinates(pdb_content):
     """
@@ -35,8 +35,6 @@ def process_pdb_to_coordinates(pdb_content):
             for residue in chain:
                 if residue.has_id('CA') and residue.get_resname() not in ['HOH', 'WAT', 'UNL']:
                     ca_atom = residue['CA']
-                    
-                    # Target index 1 of the Biopython ID tuple to safely isolate the sequence number integer
                     clean_res_num = int(residue.id[1])
                     
                     extracted_coords.append({
@@ -48,7 +46,7 @@ def process_pdb_to_coordinates(pdb_content):
     return extracted_coords
 
 def build_contact_network(ca_coords, target_chains, cutoff=7.5):
-    """Builds a protein contact network filtering by chains using flat coordinate metrics."""
+    """Builds a protein contact network filtering by chains using flat data."""
     G = nx.Graph()
 
     filtered_coords = [
@@ -78,6 +76,7 @@ def build_contact_network(ca_coords, target_chains, cutoff=7.5):
                 G.add_edge(node_i_id, node_j_id, distance=distance)
     return G
 
+# --- Excel Exporter Utility ---
 def to_excel(df):
     """Converts a DataFrame to an Excel file binary format."""
     output = BytesIO()
@@ -85,7 +84,7 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Network Analysis')
     return output.getvalue()
 
-# --- Streamlit Application Layout ---
+# --- Streamlit Layout ---
 st.set_page_config(layout="wide")
 st.title("Protein Contact Network Analysis with Leiden Communities")
 
@@ -97,7 +96,6 @@ with st.sidebar:
 if uploaded_file is not None:
     pdb_content = uploaded_file.read().decode("utf-8")
     
-    # Process structure safely into primitive payloads
     all_coordinates = process_pdb_to_coordinates(pdb_content)
     all_chains = sorted(list(set(res['chain_id'] for res in all_coordinates)))
 
@@ -108,7 +106,7 @@ if uploaded_file is not None:
     )
 
     chains_filter = None if not selected_chains else selected_chains
-
+    
     if not selected_chains:
         st.warning("Please select at least one chain to proceed with the analysis, or leave empty to analyze all chains.")
 
@@ -120,12 +118,9 @@ if uploaded_file is not None:
 
     if contact_network.number_of_nodes() > 1 and contact_network.number_of_edges() > 0:
         ig_graph = ig.Graph.from_networkx(contact_network)
-        
-        # FIXED: Leiden Seed set to 42 for absolute stability across re-renders
         partition = la.find_partition(ig_graph, la.ModularityVertexPartition, seed=42)
 
-        modularity_score = partition.modularity
-        st.write(f"Modularity score: {modularity_score:.4f}")
+        st.write(f"Modularity score: {partition.modularity:.4f}")
 
         node_to_community = {ig_graph.vs[i]['_nx_name']: partition.membership[i] + 1 for i in range(ig_graph.vcount())}
         nx.set_node_attributes(contact_network, node_to_community, 'community')
@@ -167,7 +162,6 @@ if uploaded_file is not None:
         
         df_results = pd.DataFrame(output_data)
         
-        # FIXED: Explicit column layout arguments passed cleanly
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("### Processed Results")
@@ -180,40 +174,72 @@ if uploaded_file is not None:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         
-        # FIXED: Replaced old layouts parameters with stretch properties
         st.dataframe(df_results, width='stretch')
 
-        # --- 3D INTERACTIVE MOLECULAR COMMUNITY VISUALIZER ---
+        # --- Dual Visualization Window: 3D Ball View + 2D Circle Clusters ---
         st.markdown("---")
-        st.markdown("### Interactive 3D Molecular Community Viewer")
-        st.caption("Rotate (Left-Click), Pan (Right-Click), Zoom (Scroll Wheels). Residues are colored by their Leiden clusters.")
-
-        # Build hex lookup table via Matplotlib colormaps
+        
+        # Color initialization table mapping
         cmap = plt.colormaps['tab20']
         unique_communities = sorted(list(df_results['Community'].unique()))
-        
         community_colors = {}
         for idx, comm in enumerate(unique_communities):
             rgb = cmap(idx % 20)[:3]
-            hex_color = '#{:02x}{:02x}{:02x}'.format(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
-            community_colors[comm] = hex_color
+            community_colors[comm] = '#{:02x}{:02x}{:02x}'.format(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
 
-        # Instantiate WebGL viewport element layout
-        viewer = py3Dmol.view(width=900, height=600)
-        viewer.addModel(pdb_content, 'pdb')
-        viewer.setBackgroundColor('#111111')
+        vis_col1, vis_col2 = st.columns(2)
 
-        # Clear default wireframes so unselected chains disappear completely
-        viewer.setStyle({}, {})
+        with vis_col1:
+            st.markdown("### 3D Atom Sphere (Ball) Viewer")
+            st.caption("Amino acid residues are individual high-density spheres colored by community mapping.")
+            
+            # Setup 3D WebGL viewport canvas
+            viewer = py3Dmol.view(width=450, height=450)
+            viewer.addModel(pdb_content, 'pdb')
+            viewer.setBackgroundColor('#111111')
+            viewer.setStyle({}, {})  # Wipe out structural defaults
+            
+            # Render each alpha-carbon residue as a prominent sphere (ball style)
+            for _, row in df_results.iterrows():
+                viewer.setStyle(
+                    {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
+                    {'sphere': {'color': community_colors[row['Community']], 'radius': 1.8}}
+                )
+            viewer.zoomTo()
+            showmol(viewer, height=450, width=450)
 
-        # Apply specific colors to cartoon representations matching active selections
-        for _, row in df_results.iterrows():
-            viewer.setStyle(
-                {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
-                {'cartoon': {'color': community_colors[row['Community']]}}
+        with vis_col2:
+            st.markdown("### 2D Topological Community Circle Layout")
+            st.caption("Interconnected residue nodes are bundled dynamically inside absolute isolated ring structures.")
+            
+            # Construct a clean geometric shell/circle diagram map
+            fig, ax = plt.subplots(figsize=(6, 6))
+            fig.patch.set_facecolor('#111111')
+            ax.set_facecolor('#111111')
+            
+            node_list = list(contact_network.nodes())
+            edge_list = list(contact_network.edges())
+            
+            # Group nodes distinctly by community lists to plot concentric shell paths
+            community_groups = []
+            for comm in unique_communities:
+                community_groups.append([n for n in node_list if contact_network.nodes[n]['community'] == comm])
+            
+            # Compute geometric concentric boundary ring circles
+            pos = nx.shell_layout(contact_network, nlist=community_groups)
+            node_colors_list = [community_colors[contact_network.nodes[node]['community']] for node in node_list]
+            
+            # Draw standard nodes on concentric tracks
+            nx.draw_networkx_nodes(
+                contact_network, pos, nodelist=node_list,
+                node_size=35, node_color=node_colors_list, ax=ax
             )
-
-        viewer.zoomTo()
-        showmol(viewer, height=600, width=900)
-
-        st.success("Analysis complete! 3D structure loaded successfully.")
+            
+            # Draw edge interactions between circles
+            nx.draw_networkx_edges(
+                contact_network, pos, edgelist=edge_list,
+                alpha=0.15, edge_color="#888888", width=0.4, ax=ax
+            )
+            
+            ax.axis('off')
+            plt.tight_layout()
