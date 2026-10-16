@@ -36,7 +36,7 @@ def process_pdb_to_coordinates(pdb_content):
                 if residue.has_id('CA') and residue.get_resname() not in ['HOH', 'WAT', 'UNL']:
                     ca_atom = residue['CA']
                     
-                    # --- FIX: Extract index 1 from the Biopython ID tuple to get the true integer number ---
+                    # Target index 1 from the Biopython ID tuple to get the true integer number
                     clean_res_num = int(residue.id[1])
                     
                     extracted_coords.append({
@@ -181,18 +181,20 @@ if uploaded_file is not None:
         # --- Dual Visualization Window ---
         st.markdown("---")
         
+        # --- FIXED BLOCK ---
         cmap = plt.colormaps['tab20']
         unique_communities = sorted(list(df_results['Community'].unique()))
         community_colors = {}
         for idx, comm in enumerate(unique_communities):
-            rgb = cmap(idx % 20)[:3]
-            community_colors[comm] = '#{:02x}{:02x}{:02x}'.format(int(rgb*255), int(rgb*255), int(rgb*255))
+            r, g, b = cmap(idx % 20)[:3]
+            hex_color = '#{:02x}{:02x}{:02x}'.format(int(r * 255), int(g * 255), int(b * 255))
+            community_colors[comm] = hex_color
 
         vis_col1, vis_col2 = st.columns(2)
 
         with vis_col1:
             st.markdown("### 3D Atom Sphere (Ball) Viewer")
-            st.caption("Amino acid residues are individual high-density spheres colored by community mapping.")
+            st.caption("Amino acid residues are individual spheres colored by community mapping.")
             
             viewer = py3Dmol.view(width=450, height=450)
             viewer.addModel(pdb_content, 'pdb')
@@ -209,7 +211,7 @@ if uploaded_file is not None:
 
         with vis_col2:
             st.markdown("### 2D Topological Community Circle Layout")
-            st.caption("Interconnected residue nodes are bundled dynamically inside isolated ring structures.")
+            st.caption("Interconnected residue nodes bundled inside concentric ring structures.")
             
             fig, ax = plt.subplots(figsize=(6, 6))
             
@@ -223,7 +225,6 @@ if uploaded_file is not None:
             pos = nx.shell_layout(contact_network, nlist=community_groups)
             node_colors_list = [community_colors[contact_network.nodes[node]['community']] for node in node_list]
             
-            # Draw standard nodes on concentric tracks
             nx.draw_networkx_nodes(
                 contact_network, pos, nodelist=node_list,
                 node_size=40, node_color=node_colors_list, ax=ax
