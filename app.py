@@ -1,4 +1,4 @@
-
+%%writefile app.py
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -109,7 +109,7 @@ if uploaded_file is not None:
     all_chains = sorted(list(set(res['chain_id'] for res in all_coordinates)))
 
     with st.sidebar:
-        selected_chains = st.multiselect(
+        selected_chains = st.multiselect( 
             "Select Chain(s) to Analyze (leave empty for all)",
             options=all_chains,
             default=all_chains
@@ -179,7 +179,7 @@ if uploaded_file is not None:
         with st.sidebar:
             st.markdown("---")
             st.header("💡 Highlight Amino Acids")
-            highlighted_nodes = st.multiselect(
+            highlighted_nodes = st.multiselect( 
                 "Select Residues to Highlight in Visualizations",
                 options=all_residues_list,
                 default=[]
@@ -299,12 +299,13 @@ if uploaded_file is not None:
                     edge_y.extend([pos_3d[u][1], pos_3d[v][1], None])
                     edge_z.extend([pos_3d[u][2], pos_3d[v][2], None])
 
-                edge_trace = go.Scatter3d(
+                edge_trace = go.Scatter3d( 
                     x=edge_x, y=edge_y, z=edge_z,
                     line=dict(width=1, color='#888888'),
                     hoverinfo='none',
                     mode='lines',
-                    opacity=0.3
+                    opacity=0.3,
+                    name='Edges'
                 )
 
                 # --- Build Plotly Node Traces ---
@@ -325,20 +326,21 @@ if uploaded_file is not None:
 
                     if node in highlighted_nodes:
                         colors_list.append('#FFFF00')
-                        sizes_list.append(14)
+                        sizes_list.append(26)
                         symbols_list.append('diamond')
                         line_colors_list.append('#FF0000')
                     else:
                         colors_list.append(community_colors[node_community])
-                        sizes_list.append(8)
+                        sizes_list.append(15)
                         symbols_list.append('circle')
                         line_colors_list.append('#111111')
 
-                node_trace = go.Scatter3d(
+                node_trace = go.Scatter3d( 
                     x=node_x, y=node_y, z=node_z,
                     mode='markers',
                     hoverinfo='text',
                     text=hover_texts,
+                    name='Nodes',
                     marker=dict(
                         showscale=False,
                         color=colors_list,
@@ -357,9 +359,9 @@ if uploaded_file is not None:
                 fig.update_layout(
                     margin=dict(l=0, r=0, b=0, t=0),
                     scene=dict(
-                        xaxis=dict(showbackground=False, showticklabels=False, title=''),
-                        yaxis=dict(showbackground=False, showticklabels=False, title=''),
-                        zaxis=dict(showbackground=False, showticklabels=False, title='')
+                        xaxis=dict(showbackground=False, showticklabels=False, title='', showgrid=False, zeroline=False, showline=False),
+                        yaxis=dict(showbackground=False, showticklabels=False, title='', showgrid=False, zeroline=False, showline=False),
+                        zaxis=dict(showbackground=False, showticklabels=False, title='', showgrid=False, zeroline=False, showline=False)
                     ),
                     legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
                 )
