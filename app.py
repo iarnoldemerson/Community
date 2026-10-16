@@ -35,7 +35,9 @@ def process_pdb_to_coordinates(pdb_content):
             for residue in chain:
                 if residue.has_id('CA') and residue.get_resname() not in ['HOH', 'WAT', 'UNL']:
                     ca_atom = residue['CA']
-                    clean_res_num = int(residue.id)
+                    
+                    # --- FIX: Target index 1 of the tuple structure to extract the real sequence integer ---
+                    clean_res_num = int(residue.id[1])
                     
                     extracted_coords.append({
                         'residue_id': clean_res_num,
@@ -186,7 +188,6 @@ if uploaded_file is not None:
             rgb = cmap(idx % 20)[:3]
             community_colors[comm] = '#{:02x}{:02x}{:02x}'.format(int(rgb*255), int(rgb*255), int(rgb*255))
 
-        # --- FIX: Pass explicit integer layout to st.columns ---
         vis_col1, vis_col2 = st.columns(2)
 
         with vis_col1:
@@ -210,7 +211,6 @@ if uploaded_file is not None:
             st.markdown("### 2D Topological Community Circle Layout")
             st.caption("Interconnected residue nodes are bundled dynamically inside isolated ring structures.")
             
-            # --- FIX: Standard clean figure layout container without overlapping patches ---
             fig, ax = plt.subplots(figsize=(6, 6))
             
             node_list = list(contact_network.nodes())
@@ -229,7 +229,6 @@ if uploaded_file is not None:
                 node_size=40, node_color=node_colors_list, ax=ax
             )
             
-            # --- FIX: Changed edge color to dark grey to ensure clear visibility against light backgrounds ---
             nx.draw_networkx_edges(
                 contact_network, pos, edgelist=edge_list,
                 alpha=0.3, edge_color="#555555", width=0.5, ax=ax
@@ -238,7 +237,6 @@ if uploaded_file is not None:
             ax.axis('off')
             plt.tight_layout()
             
-            # --- FIX: Force layout call parameter explicitly ---
             st.pyplot(fig)
             plt.close(fig)
 
