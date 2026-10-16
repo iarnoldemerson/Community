@@ -12,6 +12,7 @@ import igraph as ig
 import streamlit as st
 from io import StringIO, BytesIO
 import sys
+import plotly.graph_objects as go
 
 # --- 3D Molecular View Component Additions ---
 import py3Dmol
@@ -224,7 +225,6 @@ if uploaded_file is not None:
 
             for _, row in df_results.iterrows():
                 node_id = row['Node_ID']
-                # Highlight selection visual styling override
                 if node_id in highlighted_nodes:
                     viewer.setStyle(
                         {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
@@ -239,15 +239,10 @@ if uploaded_file is not None:
             showmol(viewer, height=450, width=450)
 
         with vis_col2:
-            st.markdown("### 3D Clustered Topological Network Layout")
-            st.caption("Residue interaction topological graph. Highlighted residues are displayed as large glowing stars.")
-
-            fig = plt.figure(figsize=(6, 6))
-            ax = fig.add_subplot(111, projection='3d')
+            st.markdown("### Interactive 3D Network Graph (Plotly)")
+            st.caption("Residue interaction topological graph. Drag to rotate, scroll to zoom, hover for residue data, and track highlighted items.")
 
             node_list = list(contact_network.nodes())
-            edge_list = list(contact_network.edges())
-
             for u, v in contact_network.edges():
                 if contact_network.nodes[u]['community'] == contact_network.nodes[v]['community']:
                     contact_network[u][v]['weight'] = 8.0
@@ -256,43 +251,80 @@ if uploaded_file is not None:
 
             pos_3d = nx.spring_layout(contact_network, dim=3, weight='weight', k=0.5, seed=42, iterations=60)
 
-            x_nodes = [pos_3d[node][0] for node in node_list]
-            y_nodes = [pos_3d[node][1] for node in node_list]
-            z_nodes = [pos_3d[node][2] for node in node_list]
-            
-            # Base node colors and sizes
-            node_colors_list = []
-            node_sizes_list = []
+            # --- Build Plotly Edge Traces ---
+            edge_x, edge_y, edge_z = [], [], []
+            for u, v in contact_network.edges():
+                edge_x.extend([pos_3d[u][0], pos_3d[v][0], None])
+                edge_y.extend([pos_3d[u][1], pos_3d[v][1], None])
+                edge_z.extend([pos_3d[u][2], pos_3d[v][2], None])
+
+            edge_trace = go.Scatter3d(
+                x=edge_x, y=edge_y, z=edge_z,
+                line=dict(width=1, color='#888888'),
+                hoverinfo='none',
+                mode='lines',
+                opacity=0.3
+            )
+
+            # --- Build Plotly Node Traces ---
+            node_x, node_y, node_z = [], [], []
+            colors_list, sizes_list, hover_texts, symbols_list = [], [], [], []
+            line_colors_list, line_widths_list = [], []
+
             for node in node_list:
+                node_x.append(pos_3d[node][0])
+                node_y.append(pos_3d[node][1])
+                node_z.append(pos_3d[node][2])
+                
+                node_community = contact_network.nodes[node]['community']
+                node_pi = participation_coefficients[node]
+                
+                hover_text = f"Node: {node}<br>Community: {node_community}<br>Participation Coeff (P_i): {node_pi:.4f}"
+                hover_texts.append(hover_text)
+                
                 if node in highlighted_nodes:
-                    node_colors_list.append('#FFFF00')
-                    node_sizes_list.append(180) # Larger size for highlighting
+                    colors_list.append('#FFFF00')
+                    sizes_list.append(14)
+                    symbols_list.append('diamond')
+                    line_colors_list.append('#FF0000')
+                    line_widths_list.append(3)
                 else:
-                    node_colors_list.append(community_colors[contact_network.nodes[node]['community']])
-                    node_sizes_list.append(40)
+                    colors_list.append(community_colors[node_community])
+                    sizes_list.append(8)
+                    symbols_list.append('circle')
+                    line_colors_list.append('#111111')
+                    line_widths_list.append(1)
 
-            # Draw normal nodes
-            ax.scatter(x_nodes, y_nodes, z_nodes, c=node_colors_list, s=node_sizes_list, depthshade=True, zorder=3)
+            node_trace = go.Scatter3d(
+                x=node_x, y=node_y, z=node_z,
+                mode='markers',
+                hoverinfo='text',
+                text=hover_texts,
+                marker=dict(
+                    showscale=False,
+                    color=colors_list,
+                    size=sizes_list,
+                    symbol=symbols_list,
+                    line=dict(
+                        color=line_colors_list,
+                        width=line_widths_list
+                    ),
+                    opacity=0.9
+                )
+            )
 
-            # Highlight border for chosen nodes
-            highlighted_indices = [node_list.index(n) for n in highlighted_nodes if n in node_list]
-            if highlighted_indices:
-                hx = [x_nodes[i] for i in highlighted_indices]
-                hy = [y_nodes[i] for i in highlighted_indices]
-                hz = [z_nodes[i] for i in highlighted_indices]
-                ax.scatter(hx, hy, hz, facecolors='none', edgecolors='red', s=300, marker='o', linewidths=2.0, zorder=4)
-
-            for edge in edge_list:
-                u, v = edge
-                x_line = [pos_3d[u][0], pos_3d[v][0]]
-                y_line = [pos_3d[u][1], pos_3d[v][1]]
-                z_line = [pos_3d[u][2], pos_3d[v][2]]
-                ax.plot(x_line, y_line, z_line, color='#444444', alpha=0.15, linewidth=0.6, zorder=1)
-
-            ax.set_axis_off()
-            plt.tight_layout()
-            st.pyplot(fig, clear_figure=True, facecolor='white')
-            plt.close(fig)
+            # --- Compose Plotly Figure ---
+            fig = go.Figure(data=[edge_trace, node_trace])
+            fig.update_layout(
+                margin=dict(l=0, r=0, b=0, t=0),
+                scene=dict(
+                    xaxis=dict(showbackground=False, showticklabels=False, title=''),
+                    yaxis=dict(showbackground=False, showticklabels=False, title=''),
+                    zaxis=dict(showbackground=False, showticklabels=False, title='')
+                ),
+                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("---")
         st.success("Analysis complete! Clustered topological data structures populated successfully.")
