@@ -36,7 +36,7 @@ def process_pdb_to_coordinates(pdb_content):
                 if residue.has_id('CA') and residue.get_resname() not in ['HOH', 'WAT', 'UNL']:
                     ca_atom = residue['CA']
                     
-                    # Target index 1 from the Biopython ID tuple to get the true integer number
+                    # Extract the true integer identifier safely from the internal residue tuple
                     clean_res_num = int(residue.id[1])
                     
                     extracted_coords.append({
@@ -48,7 +48,7 @@ def process_pdb_to_coordinates(pdb_content):
     return extracted_coords
 
 def build_contact_network(ca_coords, target_chains, cutoff=7.5):
-    """Builds a protein contact network filtering by chains using flat data."""
+    """Builds a protein contact network filtering by chains using flat coordinate metrics."""
     G = nx.Graph()
 
     filtered_coords = [
@@ -98,6 +98,7 @@ with st.sidebar:
 if uploaded_file is not None:
     pdb_content = uploaded_file.read().decode("utf-8")
     
+    # Process structural assets down to standard primitive blocks
     all_coordinates = process_pdb_to_coordinates(pdb_content)
     all_chains = sorted(list(set(res['chain_id'] for res in all_coordinates)))
 
@@ -120,6 +121,8 @@ if uploaded_file is not None:
 
     if contact_network.number_of_nodes() > 1 and contact_network.number_of_edges() > 0:
         ig_graph = ig.Graph.from_networkx(contact_network)
+        
+        # Leiden Seed is fixed to 42 for calculation consistency across manual filter updates
         partition = la.find_partition(ig_graph, la.ModularityVertexPartition, seed=42)
 
         st.write(f"Modularity score: {partition.modularity:.4f}")
@@ -181,7 +184,7 @@ if uploaded_file is not None:
         # --- Dual Visualization Window ---
         st.markdown("---")
         
-        # --- FIXED BLOCK ---
+        # Color unpacking configuration block fixes the float conversion TypeError
         cmap = plt.colormaps['tab20']
         unique_communities = sorted(list(df_results['Community'].unique()))
         community_colors = {}
@@ -199,7 +202,7 @@ if uploaded_file is not None:
             viewer = py3Dmol.view(width=450, height=450)
             viewer.addModel(pdb_content, 'pdb')
             viewer.setBackgroundColor('#111111')
-            viewer.setStyle({}, {}) 
+            viewer.setStyle({}, {})  # Clears default parent structures
             
             for _, row in df_results.iterrows():
                 viewer.setStyle(
@@ -210,35 +213,29 @@ if uploaded_file is not None:
             showmol(viewer, height=450, width=450)
 
         with vis_col2:
-            st.markdown("### 2D Topological Community Circle Layout")
-            st.caption("Interconnected residue nodes bundled inside concentric ring structures.")
+            st.markdown("### 2D Clustered Community Network Layout")
+            st.caption("Residue interaction topology grouped explicitly into distinct spatial cluster pools.")
             
             fig, ax = plt.subplots(figsize=(6, 6))
             
             node_list = list(contact_network.nodes())
             edge_list = list(contact_network.edges())
             
-            community_groups = []
+            # Compute modular centers symmetrically along an orbital anchor vector path
+            num_communities = len(unique_communities)
+            center_positions = {}
+            for idx, comm in enumerate(unique_communities):
+                angle = 2 * np.pi * idx / max(num_communities, 1)
+                center_positions[comm] = np.array([np.cos(angle) * 3.5, np.sin(angle) * 3.5])
+            
+            # Sub-cluster positions are calculated locally inside modular groups
+            pos = {}
             for comm in unique_communities:
-                community_groups.append([n for n in node_list if contact_network.nodes[n]['community'] == comm])
+                sub_nodes = [n for n in node_list if contact_network.nodes[n]['community'] == comm]
+                sub_graph = contact_network.subgraph(sub_nodes)
+                
+                local_pos = nx.spring_layout(sub_graph, k=0.3, seed=42, iterations=30)
+                
+                for node in sub_nodes:
+                    pos[node] = local_pos[node] + center_positions[comm]
             
-            pos = nx.shell_layout(contact_network, nlist=community_groups)
-            node_colors_list = [community_colors[contact_network.nodes[node]['community']] for node in node_list]
-            
-            nx.draw_networkx_nodes(
-                contact_network, pos, nodelist=node_list,
-                node_size=40, node_color=node_colors_list, ax=ax
-            )
-            
-            nx.draw_networkx_edges(
-                contact_network, pos, edgelist=edge_list,
-                alpha=0.3, edge_color="#555555", width=0.5, ax=ax
-            )
-            
-            ax.axis('off')
-            plt.tight_layout()
-            
-            st.pyplot(fig)
-            plt.close(fig)
-
-        st.success("Analysis complete! Dual structural maps rendered successfully.")
