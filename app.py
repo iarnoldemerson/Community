@@ -1,3 +1,4 @@
+%%writefile app.py
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -28,22 +29,22 @@ def process_pdb_to_coordinates(pdb_content):
     parser = PDBParser()
     pdb_file_like = StringIO(pdb_content)
     structure = parser.get_structure('protein', pdb_file_like)
-    
+
     extracted_coords = []
     for model in structure:
         for chain in model:
             for residue in chain:
                 if residue.has_id('CA') and residue.get_resname() not in ['HOH', 'WAT', 'UNL']:
                     ca_atom = residue['CA']
-                    
+
                     # Target index 1 from the Biopython ID tuple to get the true integer number
                     clean_res_num = int(residue.id[1])
-                    
+
                     extracted_coords.append({
                         'residue_id': clean_res_num,
                         'residue_name': str(residue.get_resname()),
                         'chain_id': str(chain.id),
-                        'coordinates': ca_atom.get_coord().tolist()
+                        'coordinates': ca_atom.get_coord().tolist() 
                     })
     return extracted_coords
 
@@ -52,13 +53,13 @@ def build_contact_network(ca_coords, target_chains, cutoff=7.5):
     G = nx.Graph()
 
     filtered_coords = [
-        res for res in ca_coords 
+        res for res in ca_coords
         if target_chains is None or res['chain_id'] in target_chains
     ]
 
     for res_data in filtered_coords:
         node_id = f"{res_data['chain_id']}_{res_data['residue_name']}_{res_data['residue_id']}"
-        G.add_node(node_id, 
+        G.add_node(node_id,
                    residue_id=res_data['residue_id'],
                    residue_name=res_data['residue_name'],
                    chain_id=res_data['chain_id'],
@@ -97,21 +98,22 @@ with st.sidebar:
 
 if uploaded_file is not None:
     pdb_content = uploaded_file.read().decode("utf-8")
-    
+
     # Process structural assets down to standard primitive blocks
     all_coordinates = process_pdb_to_coordinates(pdb_content)
     all_chains = sorted(list(set(res['chain_id'] for res in all_coordinates)))
 
-    selected_chains = st.sidebar.multiselect(
-        "Select Chain(s) to Analyze (leave empty for all)",
-        options=all_chains,
-        default=all_chains
-    )
+    with st.sidebar:
+        selected_chains = st.multiselect(
+            "Select Chain(s) to Analyze (leave empty for all)",
+            options=all_chains,
+            default=all_chains
+        )
 
     chains_filter = None if not selected_chains else selected_chains
-    
+
     if not selected_chains:
-        st.warning("Please select at least one chain to proceed with the analysis, or leave empty to analyze all chains.")
+        st.sidebar.warning("Please select at least one chain to proceed.")
 
     contact_network = build_contact_network(all_coordinates, target_chains=chains_filter, cutoff=cutoff)
 
@@ -121,7 +123,7 @@ if uploaded_file is not None:
 
     if contact_network.number_of_nodes() > 1 and contact_network.number_of_edges() > 0:
         ig_graph = ig.Graph.from_networkx(contact_network)
-        
+
         # Leiden Seed is fixed to 42 for calculation consistency across manual updates
         partition = la.find_partition(ig_graph, la.ModularityVertexPartition, seed=42)
 
@@ -164,27 +166,35 @@ if uploaded_file is not None:
                 'Community': attributes['community'],
                 'Participation_Coefficient': participation_coefficients[node_id]
             })
-        
+
         df_results = pd.DataFrame(output_data)
-        
+
+        # --- SIDEBAR Hubs Ranking Box ---
+        df_sorted_hubs = df_results.sort_values(by='Participation_Coefficient', ascending=False).head(5)
+        with st.sidebar:
+            st.markdown("---")
+            st.header("🔑 Critical Cluster Hubs")
+            st.caption("Top 5 residues spanning maximum interface communities (Highest Participation Coefficients).")
+            for _, hub in df_sorted_hubs.iterrows():
+                st.info(f"**{hub['Node_ID']}**\n\n*   Community: {hub['Community']}\n*   $P_i$: {hub['Participation_Coefficient']:.4f}")
+
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("### Processed Results")
         with col2:
             excel_data = to_excel(df_results)
-            st.download_button(
+            st.download_button( 
                 label="📥 Download Excel File",
                 data=excel_data,
                 file_name="protein_network_analysis.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-        
+
         st.dataframe(df_results, width='stretch')
 
         # --- Dual Visualization Window ---
         st.markdown("---")
-        
-        # Color unpacking configuration block fixes the float conversion TypeError
+
         cmap = plt.colormaps['tab20']
         unique_communities = sorted(list(df_results['Community'].unique()))
         community_colors = {}
@@ -197,13 +207,13 @@ if uploaded_file is not None:
 
         with vis_col1:
             st.markdown("### 3D Atom Sphere (Ball) Viewer")
-            st.caption("Amino acid residues are individual spheres colored by community mapping.")
-            
+            st.caption("Physical 3D structure showing amino acid residue balls colored by community.")
+
             viewer = py3Dmol.view(width=450, height=450)
             viewer.addModel(pdb_content, 'pdb')
             viewer.setBackgroundColor('#111111')
-            viewer.setStyle({}, {})  # Clears default parent structures
-            
+            viewer.setStyle({}, {})
+
             for _, row in df_results.iterrows():
                 viewer.setStyle(
                     {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
@@ -213,44 +223,40 @@ if uploaded_file is not None:
             showmol(viewer, height=450, width=450)
 
         with vis_col2:
-            st.markdown("### 2D Clustered Community Network Layout")
-            st.caption("Residue interaction topology grouped explicitly into distinct spatial cluster pools.")
-            
-            fig, ax = plt.subplots(figsize=(6, 6))
-            
+            st.markdown("### 3D Clustered Topological Network Layout")
+            st.caption("Residue interaction topological graph mapped mathematically into distinct 3D space clouds.")
+
+            fig = plt.figure(figsize=(6, 6))
+            ax = fig.add_subplot(111, projection='3d')
+
             node_list = list(contact_network.nodes())
             edge_list = list(contact_network.edges())
-            
-            # --- Inject community attraction weights directly to force structural pooling ---
+
             for u, v in contact_network.edges():
                 if contact_network.nodes[u]['community'] == contact_network.nodes[v]['community']:
-                    contact_network[u][v]['weight'] = 8.0  # Tight attraction inside same community
+                    contact_network[u][v]['weight'] = 8.0
                 else:
-                    contact_network[u][v]['weight'] = 0.2  # Soft repulsion between different communities
+                    contact_network[u][v]['weight'] = 0.2
 
-            # Run global spring solver pulling tightly weighted node clusters together
-            pos = nx.spring_layout(contact_network, weight='weight', k=0.4, seed=42, iterations=50)
-            
+            pos_3d = nx.spring_layout(contact_network, dim=3, weight='weight', k=0.5, seed=42, iterations=60)
+
+            x_nodes = [pos_3d[node][0] for node in node_list]
+            y_nodes = [pos_3d[node][1] for node in node_list]
+            z_nodes = [pos_3d[node][2] for node in node_list]
             node_colors_list = [community_colors[contact_network.nodes[node]['community']] for node in node_list]
+            ax.scatter(x_nodes, y_nodes, z_nodes, c=node_colors_list, s=40, depthshade=True, zorder=3)
             
-            # Draw network nodes safely across the clustered coordinate map
-            nx.draw_networkx_nodes(
-                contact_network, pos, nodelist=node_list,
-                node_size=50, node_color=node_colors_list, ax=ax
-            )
-            
-            # Draw connection trails spanning between the local clusters
-            nx.draw_networkx_edges(
-                contact_network, pos, edgelist=edge_list,
-                alpha=0.2, edge_color="#333333", width=0.5, ax=ax
-            )
-            
-            ax.axis('off')
+            for edge in edge_list:
+                u, v = edge
+                x_line = [pos_3d[u][0], pos_3d[v][0]]
+                y_line = [pos_3d[u][1], pos_3d[v][1]]
+                z_line = [pos_3d[u][2], pos_3d[v][2]]
+                ax.plot(x_line, y_line, z_line, color='#444444', alpha=0.15, linewidth=0.6, zorder=1)
+                
+            ax.set_axis_off()
             plt.tight_layout()
-            
-            # Pass figure explicitly and override transparent backgrounds to prevent rendering invisibility
             st.pyplot(fig, clear_figure=True, facecolor='white')
             plt.close(fig)
-
+            
         st.markdown("---")
         st.success("Analysis complete! Clustered topological data structures populated successfully.")
