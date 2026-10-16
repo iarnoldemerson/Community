@@ -36,7 +36,7 @@ def process_pdb_to_coordinates(pdb_content):
                 if residue.has_id('CA') and residue.get_resname() not in ['HOH', 'WAT', 'UNL']:
                     ca_atom = residue['CA']
                     
-                    # --- FIX: Target index 1 of the tuple structure to extract the real sequence integer ---
+                    # --- FIX: Extract index 1 from the Biopython ID tuple to get the true integer number ---
                     clean_res_num = int(residue.id[1])
                     
                     extracted_coords.append({
