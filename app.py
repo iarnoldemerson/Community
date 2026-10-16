@@ -12,7 +12,6 @@ import igraph as ig
 import streamlit as st
 from io import StringIO, BytesIO
 import sys
-import plotly.graph_objects as go
 
 # --- 3D Molecular View Component Additions ---
 import py3Dmol
@@ -50,9 +49,9 @@ def build_contact_network(ca_coords, target_chains, cutoff=7.5):
     """Builds a protein contact network filtering by chains using flat data arrays."""
     G = nx.Graph()
 
-    filtered_coords = [
-        res for res in ca_coords
-        if target_chains is None or res['chain_id'] in target_chains
+    filtered_coords = [ 
+        res for res in ca_coords 
+        if target_chains is None or res['chain_id'] in target_chains 
     ]
 
     for res_data in filtered_coords:
@@ -93,13 +92,6 @@ with st.sidebar:
     st.header("Configuration")
     uploaded_file = st.file_uploader("Upload a PDB file", type=["pdb"])
     cutoff = st.slider("Distance Cutoff (Angstroms)", min_value=1.0, max_value=15.0, value=7.5, step=0.5)
-    
-    st.markdown("---")
-    st.header("👁️ Visualization Mode")
-    vis_mode = st.radio(
-        "Select Visualization Layout:",
-        options=["Both Side-by-Side", "3D Protein Structure Only", "Interactive 3D Network Graph Only"]
-    )
 
 if uploaded_file is not None:
     pdb_content = uploaded_file.read().decode("utf-8")
@@ -199,7 +191,7 @@ if uploaded_file is not None:
             st.markdown("### Processed Results")
         with col2:
             excel_data = to_excel(df_results)
-            st.download_button( 
+            st.download_button(
                 label="📥 Download Excel File",
                 data=excel_data,
                 file_name="protein_network_analysis.xlsx",
@@ -208,7 +200,7 @@ if uploaded_file is not None:
 
         st.dataframe(df_results, width='stretch')
 
-        # --- Dual Visualization Window (Dynamic Layout) ---
+        # --- Dual Visualization Window ---
         st.markdown("---")
 
         cmap = plt.colormaps['tab20']
@@ -219,131 +211,88 @@ if uploaded_file is not None:
             hex_color = '#{:02x}{:02x}{:02x}'.format(int(r * 255), int(g * 255), int(b * 255))
             community_colors[comm] = hex_color
 
-        # Determine layout columns based on user selection
-        show_3d_protein = (vis_mode == "Both Side-by-Side" or vis_mode == "3D Protein Structure Only")
-        show_network_graph = (vis_mode == "Both Side-by-Side" or vis_mode == "Interactive 3D Network Graph Only")
+        vis_col1, vis_col2 = st.columns(2)
 
-        if vis_mode == "Both Side-by-Side":
-            vis_cols = st.columns(2)
-            col_protein = vis_cols[0]
-            col_network = vis_cols[1]
-        else:
-            vis_cols = st.columns(1)
-            col_protein = vis_cols[0]
-            col_network = vis_cols[0]
+        with vis_col1:
+            st.markdown("### 3D Atom Sphere (Ball) Viewer")
+            st.caption("Physical 3D structure showing amino acid residue balls colored by community. Highlighted residues have secondary yellow halos.")
 
-        if show_3d_protein:
-            with col_protein:
-                st.markdown("### 3D Atom Sphere (Ball) Viewer")
-                st.caption("Physical 3D structure showing amino acid residue balls colored by community. Highlighted residues have secondary yellow halos.")
+            viewer = py3Dmol.view(width=450, height=450)
+            viewer.addModel(pdb_content, 'pdb')
+            viewer.setBackgroundColor('#111111')
+            viewer.setStyle({}, {})
 
-                viewer = py3Dmol.view(width=450, height=450)
-                viewer.addModel(pdb_content, 'pdb')
-                viewer.setBackgroundColor('#111111')
-                viewer.setStyle({}, {})
-
-                for _, row in df_results.iterrows():
-                    node_id = row['Node_ID']
-                    if node_id in highlighted_nodes:
-                        viewer.setStyle(
-                            {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
-                            {'sphere': {'color': '#FFFF00', 'radius': 2.8}}
-                        )
-                    else:
-                        viewer.setStyle(
-                            {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
-                            {'sphere': {'color': community_colors[row['Community']], 'radius': 1.8}}
-                        )
-                viewer.zoomTo()
-                showmol(viewer, height=450, width=450)
-
-        if show_network_graph:
-            with col_network:
-                st.markdown("### Interactive 3D Network Graph (Plotly)")
-                st.caption("Residue interaction topological graph. Nodes are positioned using real physical 3D PDB coordinates instead of an abstract force-directed layout.")
-
-                node_list = list(contact_network.nodes())
-                for u, v in contact_network.edges():
-                    if contact_network.nodes[u]['community'] == contact_network.nodes[v]['community']:
-                        contact_network[u][v]['weight'] = 8.0
-                    else:
-                        contact_network[u][v]['weight'] = 0.2
-
-                # Use the actual CA atom physical coordinates
-                pos_3d = {node: contact_network.nodes[node]['coordinates'] for node in node_list}
-
-                # --- Build Plotly Edge Traces ---
-                edge_x, edge_y, edge_z = [], [], []
-                for u, v in contact_network.edges():
-                    edge_x.extend([pos_3d[u][0], pos_3d[v][0], None])
-                    edge_y.extend([pos_3d[u][1], pos_3d[v][1], None])
-                    edge_z.extend([pos_3d[u][2], pos_3d[v][2], None])
-
-                edge_trace = go.Scatter3d(
-                    x=edge_x, y=edge_y, z=edge_z,
-                    line=dict(width=1, color='#888888'),
-                    hoverinfo='none',
-                    mode='lines',
-                    opacity=0.3
-                )
-
-                # --- Build Plotly Node Traces ---
-                node_x, node_y, node_z = [], [], []
-                colors_list, sizes_list, hover_texts, symbols_list = [], [], [], []
-                line_colors_list = []
-
-                for node in node_list:
-                    node_x.append(pos_3d[node][0])
-                    node_y.append(pos_3d[node][1])
-                    node_z.append(pos_3d[node][2])
-
-                    node_community = contact_network.nodes[node]['community']
-                    node_pi = participation_coefficients[node]
-
-                    hover_text = f"Node: {node}<br>Community: {node_community}<br>Participation Coeff (P_i): {node_pi:.4f}"
-                    hover_texts.append(hover_text)
-
-                    if node in highlighted_nodes:
-                        colors_list.append('#FFFF00')
-                        sizes_list.append(14)
-                        symbols_list.append('diamond')
-                        line_colors_list.append('#FF0000')
-                    else:
-                        colors_list.append(community_colors[node_community])
-                        sizes_list.append(8)
-                        symbols_list.append('circle')
-                        line_colors_list.append('#111111')
-
-                node_trace = go.Scatter3d(
-                    x=node_x, y=node_y, z=node_z,
-                    mode='markers',
-                    hoverinfo='text',
-                    text=hover_texts,
-                    marker=dict(
-                        showscale=False,
-                        color=colors_list,
-                        size=sizes_list,
-                        symbol=symbols_list,
-                        line=dict(
-                            color=line_colors_list,
-                            width=1.5
-                        ),
-                        opacity=0.9
+            for _, row in df_results.iterrows():
+                node_id = row['Node_ID']
+                # Highlight selection visual styling override
+                if node_id in highlighted_nodes:
+                    viewer.setStyle(
+                        {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
+                        {'sphere': {'color': '#FFFF00', 'radius': 2.8}}
                     )
-                )
+                else:
+                    viewer.setStyle(
+                        {'chain': row['Chain_ID'], 'resi': int(row['Residue_Number'])},
+                        {'sphere': {'color': community_colors[row['Community']], 'radius': 1.8}}
+                    )
+            viewer.zoomTo()
+            showmol(viewer, height=450, width=450)
 
-                # --- Compose Plotly Figure ---
-                fig = go.Figure(data=[edge_trace, node_trace])
-                fig.update_layout(
-                    margin=dict(l=0, r=0, b=0, t=0),
-                    scene=dict(
-                        xaxis=dict(showbackground=False, showticklabels=False, title=''),
-                        yaxis=dict(showbackground=False, showticklabels=False, title=''),
-                        zaxis=dict(showbackground=False, showticklabels=False, title='')
-                    ),
-                    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
-                )
-                st.plotly_chart(fig, use_container_width=True)
+        with vis_col2:
+            st.markdown("### 3D Clustered Topological Network Layout")
+            st.caption("Residue interaction topological graph. Highlighted residues are displayed as large glowing stars.")
+
+            fig = plt.figure(figsize=(6, 6))
+            ax = fig.add_subplot(111, projection='3d')
+
+            node_list = list(contact_network.nodes())
+            edge_list = list(contact_network.edges())
+
+            for u, v in contact_network.edges():
+                if contact_network.nodes[u]['community'] == contact_network.nodes[v]['community']:
+                    contact_network[u][v]['weight'] = 8.0
+                else:
+                    contact_network[u][v]['weight'] = 0.2
+
+            pos_3d = nx.spring_layout(contact_network, dim=3, weight='weight', k=0.5, seed=42, iterations=60)
+
+            x_nodes = [pos_3d[node][0] for node in node_list]
+            y_nodes = [pos_3d[node][1] for node in node_list]
+            z_nodes = [pos_3d[node][2] for node in node_list]
+            
+            # Base node colors and sizes
+            node_colors_list = []
+            node_sizes_list = []
+            for node in node_list:
+                if node in highlighted_nodes:
+                    node_colors_list.append('#FFFF00')
+                    node_sizes_list.append(180) # Larger size for highlighting
+                else:
+                    node_colors_list.append(community_colors[contact_network.nodes[node]['community']])
+                    node_sizes_list.append(40)
+
+            # Draw normal nodes
+            ax.scatter(x_nodes, y_nodes, z_nodes, c=node_colors_list, s=node_sizes_list, depthshade=True, zorder=3)
+
+            # Highlight border for chosen nodes
+            highlighted_indices = [node_list.index(n) for n in highlighted_nodes if n in node_list]
+            if highlighted_indices:
+                hx = [x_nodes[i] for i in highlighted_indices]
+                hy = [y_nodes[i] for i in highlighted_indices]
+                hz = [z_nodes[i] for i in highlighted_indices]
+                ax.scatter(hx, hy, hz, facecolors='none', edgecolors='red', s=300, marker='o', linewidths=2.0, zorder=4)
+
+            for edge in edge_list:
+                u, v = edge
+                x_line = [pos_3d[u][0], pos_3d[v][0]]
+                y_line = [pos_3d[u][1], pos_3d[v][1]]
+                z_line = [pos_3d[u][2], pos_3d[v][2]]
+                ax.plot(x_line, y_line, z_line, color='#444444', alpha=0.15, linewidth=0.6, zorder=1)
+
+            ax.set_axis_off()
+            plt.tight_layout()
+            st.pyplot(fig, clear_figure=True, facecolor='white')
+            plt.close(fig)
 
         st.markdown("---")
         st.success("Analysis complete! Clustered topological data structures populated successfully.")
