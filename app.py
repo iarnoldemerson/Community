@@ -260,7 +260,7 @@ if uploaded_file is not None:
         if show_network_graph:
             with col_network:
                 st.markdown("### Interactive 3D Network Graph (Plotly)")
-                st.caption("Residue interaction topological graph. Drag to rotate, scroll to zoom, hover for residue data, and track highlighted items.")
+                st.caption("Residue interaction topological graph. Nodes are positioned using real physical 3D PDB coordinates instead of an abstract force-directed layout.")
 
                 node_list = list(contact_network.nodes())
                 for u, v in contact_network.edges():
@@ -269,7 +269,8 @@ if uploaded_file is not None:
                     else:
                         contact_network[u][v]['weight'] = 0.2
 
-                pos_3d = nx.spring_layout(contact_network, dim=3, weight='weight', k=0.5, seed=42, iterations=60)
+                # Use the actual CA atom physical coordinates
+                pos_3d = {node: contact_network.nodes[node]['coordinates'] for node in node_list}
 
                 # --- Build Plotly Edge Traces ---
                 edge_x, edge_y, edge_z = [], [], []
