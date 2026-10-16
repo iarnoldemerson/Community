@@ -221,8 +221,7 @@ if uploaded_file is not None:
             node_list = list(contact_network.nodes())
             edge_list = list(contact_network.edges())
             
-            # --- FIX: Inject community attraction weights directly to force structural pooling ---
-            # This completely avoids broken subgraph mapping bugs!
+            # --- Inject community attraction weights directly to force structural pooling ---
             for u, v in contact_network.edges():
                 if contact_network.nodes[u]['community'] == contact_network.nodes[v]['community']:
                     contact_network[u][v]['weight'] = 8.0  # Tight attraction inside same community
@@ -238,16 +237,5 @@ if uploaded_file is not None:
             nx.draw_networkx_nodes(
                 contact_network, pos, nodelist=node_list,
                 node_size=50, node_color=node_colors_list, ax=ax
-)
-# Draw connection trails spanning between the local clusters
-nx.draw_networkx_edges(
-contact_network, pos, edgelist=edge_list,
-alpha=0.2, edge_color="#333333", width=0.5, ax=ax
-)
-ax.axis('off')
-plt.tight_layout()
-# Pass figure explicitly and override transparent backgrounds to prevent rendering invisibility
-st.pyplot(fig, clear_figure=True, facecolor='white')
-plt.close(fig)
-st.markdown("---")
-st.success("Analysis complete! Clustered topological data structures populated successfully.")
+            )
+            
