@@ -125,6 +125,7 @@ if uploaded_file is not None:
         # Leiden Seed is fixed to 42 for calculation consistency across manual updates
         partition = la.find_partition(ig_graph, la.ModularityVertexPartition, seed=42)
 
+
         st.write(f"Modularity score: {partition.modularity:.4f}")
 
         node_to_community = {ig_graph.vs[i]['_nx_name']: partition.membership[i] + 1 for i in range(ig_graph.vcount())}
@@ -269,31 +270,29 @@ if uploaded_file is not None:
             # --- Build Plotly Node Traces ---
             node_x, node_y, node_z = [], [], []
             colors_list, sizes_list, hover_texts, symbols_list = [], [], [], []
-            line_colors_list, line_widths_list = [], []
+            line_colors_list = []
 
             for node in node_list:
                 node_x.append(pos_3d[node][0])
                 node_y.append(pos_3d[node][1])
                 node_z.append(pos_3d[node][2])
-                
+
                 node_community = contact_network.nodes[node]['community']
                 node_pi = participation_coefficients[node]
-                
+
                 hover_text = f"Node: {node}<br>Community: {node_community}<br>Participation Coeff (P_i): {node_pi:.4f}"
                 hover_texts.append(hover_text)
-                
+
                 if node in highlighted_nodes:
                     colors_list.append('#FFFF00')
                     sizes_list.append(14)
                     symbols_list.append('diamond')
                     line_colors_list.append('#FF0000')
-                    line_widths_list.append(3)
                 else:
                     colors_list.append(community_colors[node_community])
                     sizes_list.append(8)
                     symbols_list.append('circle')
                     line_colors_list.append('#111111')
-                    line_widths_list.append(1)
 
             node_trace = go.Scatter3d(
                 x=node_x, y=node_y, z=node_z,
@@ -307,7 +306,7 @@ if uploaded_file is not None:
                     symbol=symbols_list,
                     line=dict(
                         color=line_colors_list,
-                        width=line_widths_list
+                        width=1.5
                     ),
                     opacity=0.9
                 )
